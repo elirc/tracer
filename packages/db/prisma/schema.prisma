@@ -48,6 +48,7 @@ model User {
   memberships    Membership[]
   sessions       Session[]
   assignedIssues Issue[]
+  comments       Comment[]
 
   @@unique([provider, providerUserId])
 }
@@ -186,11 +187,26 @@ model Issue {
   updatedAt   DateTime @updatedAt
   deletedAt   DateTime? // soft delete — every read must filter this out
 
-  labels IssueLabel[]
+  labels   IssueLabel[]
+  comments Comment[]
 
   @@unique([teamId, number])
   @@index([teamId, stateId, sortOrder])
   @@index([teamId, assigneeId])
+}
+
+// Comments are just another synced entity — they ride the same mutation log as issues, so the whole
+// feature (create, live updates, and even undo) lands with ZERO new sync infrastructure (S09).
+model Comment {
+  id        String   @id @default(cuid())
+  issueId   String
+  issue     Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  authorId  String
+  author    User @relation(fields: [authorId], references: [id])
+  body      String
+  createdAt DateTime @default(now())
+
+  @@index([issueId, createdAt])
 }
 
 model IssueLabel {

@@ -28,4 +28,5 @@ export type {
   StateType,
   Priority,
   MutationLog,
+  Comment,
 } from "@prisma/client";
