@@ -1,0 +1,21 @@
+name: Deploy
+
+# Scaffold. Triggered manually until a hosting target + secrets are configured; Sprint 15 wires
+# auto-deploy on merge to main with a smoke-test gate. Fill in your provider (Railway/Fly/Render)
+# and secrets, then switch the trigger to `push: branches: [main]`.
+on:
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build images
+        run: |
+          docker build -f apps/api/Dockerfile -t tracer-api .
+          docker build -f apps/web/Dockerfile -t tracer-web .
+      # - name: Push + deploy
+      #   run: <provider deploy step; requires DEPLOY_TOKEN secret>
+      # - name: Smoke test
+      #   run: curl -fsS "$DEPLOY_URL/health"
