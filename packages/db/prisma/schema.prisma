@@ -1,7 +1,7 @@
 // Prisma schema for Tracer.
-// Sprint 01: Workspace (the walking-skeleton reference entity).
-// Sprint 02: identity + membership — User, Team, Membership (roles + guest team scoping),
-//            Session, Invite. The issue domain (issues, the mutation log) arrives in S03+.
+// S01: Workspace. S02: identity + membership. S03: the issue domain (issues, workflow states,
+// labels) — deliberately a "classic" REST-shaped model. The mutation log that powers real-time
+// sync arrives in S06 (see ADR-0002).
 
 generator client {
   provider = "prisma-client-js"
@@ -18,18 +18,36 @@ enum Role {
   GUEST
 }
 
+// The *type* is the stable API of a workflow state; the name is a per-team label. Queries key
+// on type (e.g. "started") so they survive teams renaming their columns.
+enum StateType {
+  BACKLOG
+  UNSTARTED
+  STARTED
+  DONE
+  CANCELED
+}
+
+enum Priority {
+  NONE
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
 model User {
   id             String   @id @default(cuid())
   email          String   @unique
   name           String?
   avatarUrl      String?
-  // OAuth identity — a user is (provider, providerUserId), never a password.
   provider       String
   providerUserId String
   createdAt      DateTime @default(now())
 
-  memberships Membership[]
-  sessions    Session[]
+  memberships    Membership[]
+  sessions       Session[]
+  assignedIssues Issue[]
 
   @@unique([provider, providerUserId])
 }
@@ -50,8 +68,14 @@ model Team {
   workspaceId String
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   name        String
-  key         String // short prefix, e.g. "ENG" (used for issue identifiers in S03)
+  key         String // identifier prefix, e.g. "ENG"
+  // Monotonic per-team counter for issue numbers. Incremented atomically (see routes/issues.ts).
+  issueCounter Int     @default(0)
   createdAt   DateTime @default(now())
+
+  workflowStates WorkflowState[]
+  labels         Label[]
+  issues         Issue[]
 
   @@unique([workspaceId, key])
 }
@@ -63,7 +87,6 @@ model Membership {
   workspaceId  String
   workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   role         Role     @default(MEMBER)
-  // For GUEST: the team ids they may access. Empty for ADMIN/MEMBER (they see all teams).
   guestTeamIds String[]
   createdAt    DateTime @default(now())
 
@@ -72,7 +95,6 @@ model Membership {
 
 model Session {
   id        String   @id @default(cuid())
-  // The cookie carries a random token; we store only its hash (never the raw token).
   tokenHash String   @unique
   userId    String
   user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -90,4 +112,63 @@ model Invite {
   expiresAt   DateTime
   acceptedAt  DateTime?
   createdAt   DateTime @default(now())
+}
+
+model WorkflowState {
+  id        String    @id @default(cuid())
+  teamId    String
+  team      Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name      String
+  type      StateType
+  position  Int
+  color     String    @default("#8b93a1")
+  createdAt DateTime  @default(now())
+
+  issues Issue[]
+
+  @@unique([teamId, name])
+}
+
+model Label {
+  id     String @id @default(cuid())
+  teamId String
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name   String
+  color  String @default("#7c5cff")
+
+  issues IssueLabel[]
+
+  @@unique([teamId, name])
+}
+
+model Issue {
+  id          String   @id @default(cuid())
+  teamId      String
+  team        Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  number      Int // per-team; the identifier is team.key + "-" + number (e.g. ENG-123)
+  title       String
+  description String   @default("")
+  stateId     String
+  state       WorkflowState @relation(fields: [stateId], references: [id])
+  priority    Priority @default(NONE)
+  assigneeId  String?
+  assignee    User? @relation(fields: [assigneeId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  deletedAt   DateTime? // soft delete — every read must filter this out
+
+  labels IssueLabel[]
+
+  @@unique([teamId, number])
+  @@index([teamId, stateId])
+  @@index([teamId, assigneeId])
+}
+
+model IssueLabel {
+  issueId String
+  labelId String
+  issue   Issue @relation(fields: [issueId], references: [id], onDelete: Cascade)
+  label   Label @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([issueId, labelId])
 }
