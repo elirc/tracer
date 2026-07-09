@@ -1,31 +1,76 @@
-import { useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { fuzzyMatch } from "@tracer/shared";
 import { useShortcut } from "./lib/keyboard";
+import { apiGet } from "./lib/api";
 
 export interface Command {
   id: string;
   label: string;
   run: () => void;
 }
+interface IssueResult {
+  id: string;
+  identifier: string;
+  title: string;
+  teamId: string;
+}
+
+const FRECENCY_KEY = "tracer:frecency";
+function loadFrecency(): Record<string, number> {
+  try {
+    return JSON.parse(localStorage.getItem(FRECENCY_KEY) ?? "{}") as Record<string, number>;
+  } catch {
+    return {};
+  }
+}
+function bump(id: string): void {
+  const f = loadFrecency();
+  f[id] = (f[id] ?? 0) + 1;
+  localStorage.setItem(FRECENCY_KEY, JSON.stringify(f));
+}
 
 /**
- * Command palette v1. Cmd/Ctrl+K toggles it; a substring filter narrows the list (real frecency
- * ranking is Sprint 11). Every action a user can take should be reachable here — the palette is
- * the keyboard-first spine of the product.
+ * Command palette v2 (S11). Two systems merged so the user never sees the seam:
+ *  - INSTANT + LOCAL: fuzzy-rank the command list, boosted by frecency (your most-used float up).
+ *  - THOROUGH + REMOTE: a debounced server search for issues across your teams.
+ * Cmd/Ctrl+K toggles it.
  */
 export function CommandPalette({ commands }: { commands: Command[] }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
+  const [issues, setIssues] = useState<IssueResult[]>([]);
 
   useShortcut("mod+k", "Open command palette", () => {
     setQ("");
+    setIssues([]);
     setOpen((o) => !o);
   });
   useShortcut("escape", "Close command palette", () => setOpen(false));
 
-  const filtered = useMemo(
-    () => commands.filter((c) => c.label.toLowerCase().includes(q.toLowerCase())),
-    [commands, q],
-  );
+  const rankedCommands = useMemo(() => {
+    const frecency = loadFrecency();
+    return commands
+      .map((c) => {
+        const m = q ? fuzzyMatch(q, c.label) : { score: 0, indices: [] };
+        return m ? { c, score: m.score + (frecency[c.id] ?? 0) * 2 } : null;
+      })
+      .filter((x): x is { c: Command; score: number } => x !== null)
+      .sort((a, b) => b.score - a.score);
+  }, [commands, q]);
+
+  // Debounced server search — the long tail the local store hasn't loaded.
+  useEffect(() => {
+    if (!open || q.trim().length < 2) {
+      setIssues([]);
+      return;
+    }
+    const t = window.setTimeout(() => {
+      void apiGet<IssueResult[]>(`/api/v1/search?q=${encodeURIComponent(q.trim())}`)
+        .then(setIssues)
+        .catch(() => setIssues([]));
+    }, 150);
+    return () => window.clearTimeout(t);
+  }, [q, open]);
 
   if (!open) return null;
   return (
@@ -34,24 +79,31 @@ export function CommandPalette({ commands }: { commands: Command[] }) {
         <input
           autoFocus
           style={pInput}
-          placeholder="Type a command…"
+          placeholder="Search issues or type a command…"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        {filtered.map((c) => (
+        {rankedCommands.map(({ c }) => (
           <button
             key={c.id}
             style={pItem}
             onClick={() => {
+              bump(c.id);
               c.run();
               setOpen(false);
             }}
           >
-            {c.label}
+            ⌘ {c.label}
           </button>
         ))}
-        {filtered.length === 0 && (
-          <div style={{ padding: 12, color: "var(--muted)" }}>No commands.</div>
+        {issues.length > 0 && <div style={sectionLabel}>Issues</div>}
+        {issues.map((i) => (
+          <button key={i.id} style={pItem} onClick={() => setOpen(false)}>
+            <code style={{ color: "var(--muted)" }}>{i.identifier}</code> {i.title}
+          </button>
+        ))}
+        {rankedCommands.length === 0 && issues.length === 0 && (
+          <div style={{ padding: 12, color: "var(--muted)" }}>No results.</div>
         )}
       </div>
     </div>
@@ -69,7 +121,7 @@ const overlay: CSSProperties = {
   zIndex: 50,
 };
 const box: CSSProperties = {
-  width: 480,
+  width: 520,
   maxWidth: "90vw",
   background: "var(--panel)",
   border: "1px solid var(--border)",
@@ -97,4 +149,10 @@ const pItem: CSSProperties = {
   padding: "10px 16px",
   cursor: "pointer",
   fontSize: 14,
+};
+const sectionLabel: CSSProperties = {
+  padding: "8px 16px 2px",
+  fontSize: 11,
+  textTransform: "uppercase",
+  color: "var(--muted)",
 };
