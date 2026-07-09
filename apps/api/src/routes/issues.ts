@@ -4,6 +4,7 @@ import { prisma, type Priority, type StateType } from "@tracer/db";
 import { keyAfter, keyBetween } from "@tracer/shared";
 import { requireUser, requireTeamAccess } from "../auth/guards";
 import { decodeCursor, encodeCursor } from "../lib/pagination";
+import { recordMutation } from "../lib/mutations";
 import { AppError } from "../errors";
 
 const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH", "URGENT"] as const;
@@ -108,8 +109,19 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       },
       include: { state: true, assignee: true },
     });
+    // Record the mutation on the sync spine (log + fanout). REST handlers are now thin wrappers
+    // over the write path — the delta is what makes other clients' boards update live.
+    const payload = serialize(issue, team.key);
+    await recordMutation({
+      workspaceId: team.workspaceId,
+      teamId,
+      entity: "issue",
+      entityId: issue.id,
+      op: "create",
+      data: payload,
+    });
     reply.code(201);
-    return serialize(issue, team.key);
+    return payload;
   });
 
   // Move — a drag is ONE user intent, so it's ONE mutation: change the state and compute a new
@@ -147,7 +159,16 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       data: { stateId: body.stateId, sortOrder: keyBetween(loKey, hiKey) },
       include: { state: true, assignee: true },
     });
-    return serialize(updated, existing.team.key);
+    const payload = serialize(updated, existing.team.key);
+    await recordMutation({
+      workspaceId: existing.team.workspaceId,
+      teamId: existing.teamId,
+      entity: "issue",
+      entityId: updated.id,
+      op: "update",
+      data: payload,
+    });
+    return payload;
   });
 
   // List — cursor pagination + filters. Soft-deleted rows are excluded (deletedAt: null).
@@ -224,7 +245,16 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       },
       include: { state: true, assignee: true },
     });
-    return serialize(updated, existing.team.key);
+    const payload = serialize(updated, existing.team.key);
+    await recordMutation({
+      workspaceId: existing.team.workspaceId,
+      teamId: existing.teamId,
+      entity: "issue",
+      entityId: updated.id,
+      op: "update",
+      data: payload,
+    });
+    return payload;
   });
 
   // Soft delete — set deletedAt; the row survives (audit/history) and every read filters it out.
@@ -233,8 +263,16 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
     const { id } = req.params as { id: string };
     const existing = await prisma.issue.findFirst({ where: { id, deletedAt: null } });
     if (!existing) throw new AppError(404, "NOT_FOUND", "Issue not found");
-    await requireTeamAccess(user.id, existing.teamId);
+    const { team } = await requireTeamAccess(user.id, existing.teamId);
     await prisma.issue.update({ where: { id }, data: { deletedAt: new Date() } });
+    await recordMutation({
+      workspaceId: team.workspaceId,
+      teamId: existing.teamId,
+      entity: "issue",
+      entityId: id,
+      op: "delete",
+      data: null,
+    });
     reply.code(204);
     return null;
   });
