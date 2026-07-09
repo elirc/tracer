@@ -22,7 +22,9 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <Ctx.Provider value={{ show }}>
       {children}
-      <div style={wrap}>
+      {/* A polite live region: screen readers announce toasts (and, via useToast, live collaborative
+          updates) without stealing focus. This is how a real-time app stays accessible — S14. */}
+      <div style={wrap} role="status" aria-live="polite" aria-atomic="true">
         {toasts.map((t) => (
           <div key={t.id} style={{ ...toast, ...(t.kind === "error" ? errorToast : {}) }}>
             {t.message}
