@@ -16,6 +16,9 @@ const CreateIssue = z.object({
   stateId: z.string().optional(),
   priority: z.enum(PRIORITIES).optional(),
   assigneeId: z.string().nullable().optional(),
+  // Client-generated idempotency key. A resent create (ack lost) carries the same id and must
+  // apply exactly once.
+  mutationId: z.string().optional(),
 });
 
 const UpdateIssue = z.object({
@@ -76,8 +79,24 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/v1/teams/:teamId/issues", async (req, reply) => {
     const user = await requireUser(req);
     const { teamId } = req.params as { teamId: string };
-    await requireTeamAccess(user.id, teamId);
+    const { team: accessTeam } = await requireTeamAccess(user.id, teamId);
     const body = CreateIssue.parse(req.body);
+
+    // Exactly-once-in-effect: if we've already applied this mutationId, return the existing issue
+    // rather than creating a second one. This is the fix for the double-submit / ack-loss arc — a
+    // client that resends because it never saw the ack must not end up with two issues.
+    if (body.mutationId) {
+      const seen = await prisma.mutationLog.findFirst({
+        where: { workspaceId: accessTeam.workspaceId, mutationId: body.mutationId },
+      });
+      if (seen) {
+        const existing = await prisma.issue.findFirst({
+          where: { id: seen.entityId },
+          include: { state: true, assignee: true },
+        });
+        if (existing) return serialize(existing, accessTeam.key);
+      }
+    }
 
     const state = body.stateId
       ? await prisma.workflowState.findFirst({ where: { id: body.stateId, teamId } })
@@ -119,6 +138,7 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       entityId: issue.id,
       op: "create",
       data: payload,
+      mutationId: body.mutationId,
     });
     reply.code(201);
     return payload;

@@ -8,6 +8,7 @@ const delta = (seq: number, id: string): MutationDelta => ({
   entityId: id,
   op: "create",
   teamId: null,
+  mutationId: null,
   data: {},
 });
 

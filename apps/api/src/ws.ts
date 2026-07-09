@@ -143,6 +143,7 @@ function toDelta(m: MutationLog): MutationDelta {
     entityId: m.entityId,
     op: m.op as MutationDelta["op"],
     teamId: m.teamId,
+    mutationId: m.mutationId,
     data: m.op === "delete" ? null : m.patch,
   };
 }

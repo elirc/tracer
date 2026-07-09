@@ -52,6 +52,7 @@ export async function recordMutation(input: RecordInput): Promise<MutationDelta>
     entityId: input.entityId,
     op: input.op,
     teamId: input.teamId,
+    mutationId: input.mutationId ?? null,
     data: input.data,
   };
   fanout.publish(input.workspaceId, delta);
