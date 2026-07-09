@@ -24,10 +24,26 @@ export const SubscribeSchema = z.object({
 });
 export type Subscribe = z.infer<typeof SubscribeSchema>;
 
+// Presence is EPHEMERAL — it never touches the mutation log (durable vs ephemeral state, ADR-0008).
+export const PresenceSchema = z.object({
+  type: z.literal("presence"),
+  teamId: z.string(),
+});
+export type Presence = z.infer<typeof PresenceSchema>;
+
+export const ClientMessageSchema = z.discriminatedUnion("type", [SubscribeSchema, PresenceSchema]);
+export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+
 // Server -> client
 export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delta"), delta: MutationDeltaSchema }),
   z.object({ type: z.literal("bootstrap-complete"), lastSeq: z.number() }),
+  z.object({
+    type: z.literal("presence"),
+    userId: z.string(),
+    name: z.string().nullable(),
+    teamId: z.string(),
+  }),
   z.object({ type: z.literal("error"), message: z.string() }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
