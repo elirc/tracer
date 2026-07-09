@@ -45,5 +45,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     teamId: z.string(),
   }),
   z.object({ type: z.literal("error"), message: z.string() }),
+  // Graceful deploy (S15): the server is about to stop accepting connections. The client treats this
+  // as an ordinary reconnect — the same discipline S07 built for network drops now makes deploys free.
+  z.object({ type: z.literal("draining") }),
 ]);
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

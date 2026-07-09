@@ -12,6 +12,7 @@ import {
 } from "@tracer/shared";
 import { getUserByToken, SESSION_COOKIE } from "./auth/session";
 import { fanout } from "./lib/fanout";
+import { incr, setGauge } from "./lib/metrics";
 
 const HEARTBEAT_MS = 30_000;
 
@@ -54,6 +55,8 @@ export function attachWebSocketGateway(server: Server): WebSocketServer {
 
   wss.on("connection", (ws: LiveSocket) => {
     ws.isAlive = true;
+    incr("ws.connections_total");
+    setGauge("ws.connections_active", wss.clients.size);
     ws.on("pong", () => {
       ws.isAlive = true;
     });
@@ -88,6 +91,7 @@ export function attachWebSocketGateway(server: Server): WebSocketServer {
     ws.on("close", () => {
       unsubscribe?.();
       presenceBus.off("presence", onPresence);
+      setGauge("ws.connections_active", wss.clients.size);
     });
   });
 
@@ -104,6 +108,25 @@ export function attachWebSocketGateway(server: Server): WebSocketServer {
   wss.on("close", () => clearInterval(heartbeat));
 
   return wss;
+}
+
+/**
+ * Graceful drain for zero-downtime deploys (S15). Tell every connected client we're going away, then
+ * stop accepting connections. We do NOT force-close mid-flush and we do NOT try to hand off state:
+ * clients already treat a dropped socket as a reconnect (S07), and reconnect re-bootstraps from their
+ * lastSeq. So a deploy is just a *controlled* version of the network failure the system already
+ * survives — "systems that handle failure handle maintenance". The load balancer routes the
+ * reconnects to a healthy instance.
+ */
+export function drainWebSocketGateway(wss: WebSocketServer): Promise<void> {
+  for (const client of wss.clients) {
+    try {
+      client.send(JSON.stringify({ type: "draining" } satisfies ServerMessage));
+    } catch {
+      // a socket already closing is fine — it'll reconnect anyway
+    }
+  }
+  return new Promise((resolve) => wss.close(() => resolve()));
 }
 
 async function authAndUpgrade(
@@ -159,8 +182,10 @@ async function handleSubscribe(
   const unsub = fanout.subscribe((wsId, delta) => {
     if (wsId !== workspaceId) return;
     if (!canSeeDelta(access, delta.teamId)) return;
-    if (live) send(ws, { type: "delta", delta });
-    else buffered.push(delta);
+    if (live) {
+      send(ws, { type: "delta", delta });
+      incr("ws.deltas_forwarded");
+    } else buffered.push(delta);
   });
   setUnsub(unsub);
 
