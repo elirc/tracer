@@ -5,3 +5,6 @@ export * from "./sync";
 export * from "./store";
 export * from "./filter";
 export * from "./fuzzy";
+export * from "./latency";
+export * from "./trace";
+export * from "./redact";

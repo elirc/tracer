@@ -73,6 +73,10 @@ export function SyncProvider({ children }: { children: ReactNode }) {
         for (const h of deltaHandlers.current) h(msg.delta);
       } else if (msg.type === "presence") {
         for (const h of presenceHandlers.current) h(msg);
+      } else if (msg.type === "draining") {
+        // Server is being deployed. Close now to trigger our normal reconnect+catch-up (onclose below);
+        // the load balancer will route us to a healthy instance. Drain is just a polite reconnect (S15).
+        ws.close();
       }
     };
     ws.onclose = () => {

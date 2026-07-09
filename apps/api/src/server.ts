@@ -1,9 +1,11 @@
+import { randomUUID } from "node:crypto";
 import Fastify, { type FastifyInstance } from "fastify";
 import cookie from "@fastify/cookie";
 import cors from "@fastify/cors";
 import { ZodError } from "zod";
 import { env } from "./env";
 import { healthRoutes } from "./routes/health";
+import { metricsRoutes } from "./routes/metrics";
 import { workspaceRoutes } from "./routes/workspaces";
 import { authRoutes } from "./routes/auth";
 import { teamRoutes } from "./routes/teams";
@@ -22,7 +24,19 @@ import { AppError } from "./errors";
  * `{ error: { code, message } }` once, here at the edge.
  */
 export function buildServer(): FastifyInstance {
-  const app = Fastify({ logger: false });
+  const app = Fastify({
+    // Structured JSON logs in production; silent under test so the suite stays readable.
+    logger: process.env.NODE_ENV === "production" ? { level: "info" } : false,
+    // Request-ID correlation (S15): reuse an inbound `x-request-id` (so a trace spans the LB, the API,
+    // and the logs) or mint one. Every log line Fastify emits is tagged with this id — the difference
+    // between "grep and pray" and following one request across systems.
+    genReqId: (req) => (req.headers["x-request-id"] as string | undefined) ?? randomUUID(),
+  });
+
+  // Echo the request id back so the client (and its error reports) can quote it in a bug report.
+  app.addHook("onRequest", async (req, reply) => {
+    void reply.header("x-request-id", req.id);
+  });
 
   // The web SPA is a different origin (port) in dev — allow it with credentials so the
   // session cookie round-trips. Same-site (both localhost) so lax cookies flow.
@@ -42,6 +56,7 @@ export function buildServer(): FastifyInstance {
   });
 
   void app.register(healthRoutes);
+  void app.register(metricsRoutes);
   void app.register(authRoutes);
   void app.register(workspaceRoutes);
   void app.register(teamRoutes);
