@@ -2,6 +2,8 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPost, loginUrl } from "./lib/api";
 import { useSession } from "./lib/session";
 import { IssuesPanel } from "./Issues";
+import { Board } from "./Board";
+import { CommandPalette, type Command } from "./CommandPalette";
 
 interface WorkspaceRow {
   id: string;
@@ -103,6 +105,7 @@ function Workspaces() {
 function Teams({ workspace }: { workspace: WorkspaceRow }) {
   const [teams, setTeams] = useState<TeamRow[]>([]);
   const [selected, setSelected] = useState<TeamRow | null>(null);
+  const [view, setView] = useState<"list" | "board">("list");
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
 
@@ -155,7 +158,28 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
           </button>
         </div>
       )}
-      {selected && <IssuesPanel teamId={selected.id} />}
+      {selected && (
+        <>
+          <div style={{ display: "flex", gap: 8, marginTop: 16, alignItems: "center" }}>
+            <button style={view === "list" ? button : ghostButton} onClick={() => setView("list")}>
+              List
+            </button>
+            <button style={view === "board" ? button : ghostButton} onClick={() => setView("board")}>
+              Board
+            </button>
+            <span style={{ color: "var(--muted)", fontSize: 12 }}>⌘K for commands</span>
+          </div>
+          {view === "list" ? <IssuesPanel teamId={selected.id} /> : <Board teamId={selected.id} />}
+          <CommandPalette
+            commands={
+              [
+                { id: "list", label: "View: List", run: () => setView("list") },
+                { id: "board", label: "View: Board", run: () => setView("board") },
+              ] satisfies Command[]
+            }
+          />
+        </>
+      )}
     </div>
   );
 }
