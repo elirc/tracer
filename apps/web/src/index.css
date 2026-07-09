@@ -1,3 +1,12 @@
+/*
+ * Theming via CSS custom properties (S14). The palette lives in variables so a theme swap is a single
+ * attribute flip on <html> — no component knows its colors, it only knows the token names.
+ *
+ * Resolution order (last wins):
+ *   1. :root                              → dark default (the app's original look)
+ *   2. @media (prefers-color-scheme:light) → follow the OS when the user hasn't chosen
+ *   3. [data-theme="…"]                    → an explicit user choice always wins over the OS
+ */
 :root {
   --bg: #0b0d10;
   --panel: #14181d;
@@ -6,7 +15,40 @@
   --accent: #7c5cff;
   --ok: #2fbf71;
   --border: #232a32;
-  color-scheme: dark;
+  color-scheme: dark light;
+}
+
+/* Follow the OS preference when the user has NOT made an explicit choice. */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    --bg: #f7f8fa;
+    --panel: #ffffff;
+    --text: #1a1d23;
+    --muted: #5c6470;
+    --accent: #5b3df5;
+    --ok: #16794a;
+    --border: #e2e6ec;
+  }
+}
+
+/* Explicit user choices — these override the media query in both directions. */
+:root[data-theme="light"] {
+  --bg: #f7f8fa;
+  --panel: #ffffff;
+  --text: #1a1d23;
+  --muted: #5c6470;
+  --accent: #5b3df5;
+  --ok: #16794a;
+  --border: #e2e6ec;
+}
+:root[data-theme="dark"] {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --text: #e6e9ef;
+  --muted: #8b93a1;
+  --accent: #7c5cff;
+  --ok: #2fbf71;
+  --border: #232a32;
 }
 
 * {
@@ -22,4 +64,42 @@ body {
 
 code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * Skip link (WCAG 2.4.1 "Bypass Blocks"). Positioned off-screen so it doesn't disturb the layout, but
+ * NOT `display:none` — that would hide it from the keyboard too. On :focus it slides into view, so the
+ * first Tab press reveals a "Skip to content" control.
+ */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 200;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 8px;
+  text-decoration: none;
+  transition: top 0.15s ease-in-out;
+}
+.skip-link:focus {
+  top: 8px;
+}
+
+/*
+ * Respect users who asked the OS to reduce motion — disable non-essential animation/transition.
+ * (The theme transition above and any future ones fall under this.)
+ */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.001ms !important;
+    transition-duration: 0.001ms !important;
+  }
+}
+
+/* Make keyboard focus obviously visible on interactive controls — the counterpart to going mouse-free. */
+:where(button, a, input, [tabindex]):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
