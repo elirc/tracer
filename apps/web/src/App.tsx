@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPost, loginUrl } from "./lib/api";
 import { useSession } from "./lib/session";
+import { IssuesPanel } from "./Issues";
 
 interface WorkspaceRow {
   id: string;
@@ -101,10 +102,15 @@ function Workspaces() {
 
 function Teams({ workspace }: { workspace: WorkspaceRow }) {
   const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [selected, setSelected] = useState<TeamRow | null>(null);
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
 
-  const load = () => apiGet<TeamRow[]>(`/api/v1/workspaces/${workspace.id}/teams`).then(setTeams);
+  const load = () =>
+    apiGet<TeamRow[]>(`/api/v1/workspaces/${workspace.id}/teams`).then((t) => {
+      setTeams(t);
+      setSelected((s) => t.find((x) => x.id === s?.id) ?? t[0] ?? null);
+    });
   useEffect(() => {
     void load();
   }, [workspace.id]);
@@ -123,16 +129,20 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
         Teams in {workspace.name}{" "}
         <span style={{ color: "var(--muted)", fontWeight: 400 }}>({workspace.role})</span>
       </h3>
-      <ul>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {teams.map((t) => (
-          <li key={t.id}>
-            <code>{t.key}</code> — {t.name}
-          </li>
+          <button
+            key={t.id}
+            style={{ ...chip, ...(selected?.id === t.id ? chipActive : {}) }}
+            onClick={() => setSelected(t)}
+          >
+            <code>{t.key}</code> {t.name}
+          </button>
         ))}
-        {teams.length === 0 && <li style={{ color: "var(--muted)" }}>No teams visible.</li>}
-      </ul>
+        {teams.length === 0 && <span style={{ color: "var(--muted)" }}>No teams visible.</span>}
+      </div>
       {workspace.role === "ADMIN" && (
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <input style={input} placeholder="Team name" value={name} onChange={(e) => setName(e.target.value)} />
           <input
             style={{ ...input, width: 90 }}
@@ -145,6 +155,7 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
           </button>
         </div>
       )}
+      {selected && <IssuesPanel teamId={selected.id} />}
     </div>
   );
 }
