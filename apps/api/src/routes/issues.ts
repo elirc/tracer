@@ -1,10 +1,11 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma, type Priority, type StateType } from "@tracer/db";
-import { keyAfter, keyBetween } from "@tracer/shared";
+import { keyAfter, keyBetween, FilterNodeSchema } from "@tracer/shared";
 import { requireUser, requireTeamAccess } from "../auth/guards";
 import { decodeCursor, encodeCursor } from "../lib/pagination";
 import { recordMutation } from "../lib/mutations";
+import { compileFilter } from "../lib/filter-compile";
 import { AppError } from "../errors";
 
 const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH", "URGENT"] as const;
@@ -35,6 +36,8 @@ const ListQuery = z.object({
   stateType: z.enum(STATE_TYPES).optional(),
   assigneeId: z.string().optional(),
   search: z.string().optional(),
+  // A JSON-encoded filter AST (compiled to a Prisma where; see lib/filter-compile.ts).
+  filter: z.string().optional(),
 });
 
 interface IssueRow {
@@ -199,22 +202,36 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
     const q = ListQuery.parse(req.query);
     const cursor = decodeCursor(q.cursor);
 
+    let filterAst = null;
+    if (q.filter) {
+      try {
+        filterAst = FilterNodeSchema.parse(JSON.parse(q.filter));
+      } catch {
+        throw new AppError(400, "BAD_FILTER", "invalid filter");
+      }
+    }
+
     const rows = await prisma.issue.findMany({
       where: {
-        teamId,
-        deletedAt: null,
-        ...(q.stateType ? { state: { type: q.stateType } } : {}),
-        ...(q.assigneeId ? { assigneeId: q.assigneeId } : {}),
-        ...(q.search ? { title: { contains: q.search, mode: "insensitive" } } : {}),
-        // Keyset predicate that matches the (createdAt desc, id desc) ordering.
-        ...(cursor
-          ? {
-              OR: [
-                { createdAt: { lt: new Date(cursor.createdAt) } },
-                { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
-              ],
-            }
-          : {}),
+        AND: [
+          { teamId, deletedAt: null },
+          ...(q.stateType ? [{ state: { type: q.stateType } }] : []),
+          ...(q.assigneeId ? [{ assigneeId: q.assigneeId }] : []),
+          ...(q.search ? [{ title: { contains: q.search, mode: "insensitive" as const } }] : []),
+          // The compiled filter AST — dual evaluation: the client runs the SAME predicate locally.
+          ...(filterAst ? [compileFilter(filterAst)] : []),
+          // Keyset predicate matching the (createdAt desc, id desc) ordering.
+          ...(cursor
+            ? [
+                {
+                  OR: [
+                    { createdAt: { lt: new Date(cursor.createdAt) } },
+                    { createdAt: new Date(cursor.createdAt), id: { lt: cursor.id } },
+                  ],
+                },
+              ]
+            : []),
+        ],
       },
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],
       take: q.limit + 1,
