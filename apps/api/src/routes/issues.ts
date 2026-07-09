@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma, type Priority, type StateType } from "@tracer/db";
+import { keyAfter, keyBetween } from "@tracer/shared";
 import { requireUser, requireTeamAccess } from "../auth/guards";
 import { decodeCursor, encodeCursor } from "../lib/pagination";
 import { AppError } from "../errors";
@@ -38,6 +39,7 @@ interface IssueRow {
   title: string;
   description: string;
   priority: Priority;
+  sortOrder: string;
   state: { id: string; name: string; type: StateType };
   assignee: { id: string; name: string | null; email: string } | null;
   createdAt: Date;
@@ -52,12 +54,18 @@ function serialize(i: IssueRow, teamKey: string) {
     title: i.title,
     description: i.description,
     priority: i.priority,
+    sortOrder: i.sortOrder,
     state: { id: i.state.id, name: i.state.name, type: i.state.type },
     assignee: i.assignee ? { id: i.assignee.id, name: i.assignee.name, email: i.assignee.email } : null,
     createdAt: i.createdAt.toISOString(),
     updatedAt: i.updatedAt.toISOString(),
   };
 }
+
+const MoveIssue = z.object({
+  stateId: z.string(),
+  afterId: z.string().nullable().optional(),
+});
 
 export async function issueRoutes(app: FastifyInstance): Promise<void> {
   // Create — the identifier arc. We increment the team counter ATOMICALLY and use the returned
@@ -80,6 +88,13 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       data: { issueCounter: { increment: 1 } },
     });
 
+    // Append to the bottom of the chosen state's column: a key after the current last one.
+    const last = await prisma.issue.findFirst({
+      where: { teamId, stateId: state.id, deletedAt: null },
+      orderBy: { sortOrder: "desc" },
+      select: { sortOrder: true },
+    });
+
     const issue = await prisma.issue.create({
       data: {
         teamId,
@@ -89,11 +104,50 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
         stateId: state.id,
         priority: body.priority ?? "NONE",
         assigneeId: body.assigneeId ?? null,
+        sortOrder: keyAfter(last?.sortOrder ?? null),
       },
       include: { state: true, assignee: true },
     });
     reply.code(201);
     return serialize(issue, team.key);
+  });
+
+  // Move — a drag is ONE user intent, so it's ONE mutation: change the state and compute a new
+  // sortOrder key BETWEEN the chosen neighbours. Only this row is written; the rest of the column
+  // is untouched. The server owns the key so two clients can't invent colliding orders (yet — S07).
+  app.patch("/api/v1/issues/:id/move", async (req) => {
+    const user = await requireUser(req);
+    const { id } = req.params as { id: string };
+    const existing = await prisma.issue.findFirst({
+      where: { id, deletedAt: null },
+      include: { team: true },
+    });
+    if (!existing) throw new AppError(404, "NOT_FOUND", "Issue not found");
+    await requireTeamAccess(user.id, existing.teamId);
+    const body = MoveIssue.parse(req.body);
+
+    const siblings = await prisma.issue.findMany({
+      where: { teamId: existing.teamId, stateId: body.stateId, deletedAt: null, id: { not: id } },
+      orderBy: { sortOrder: "asc" },
+      select: { id: true, sortOrder: true },
+    });
+
+    let loKey: string | null = null;
+    let hiKey: string | null = null;
+    if (!body.afterId) {
+      hiKey = siblings[0]?.sortOrder ?? null; // top of the column
+    } else {
+      const aIdx = siblings.findIndex((s) => s.id === body.afterId);
+      loKey = aIdx >= 0 ? (siblings[aIdx]?.sortOrder ?? null) : null;
+      hiKey = aIdx >= 0 ? (siblings[aIdx + 1]?.sortOrder ?? null) : null;
+    }
+
+    const updated = await prisma.issue.update({
+      where: { id },
+      data: { stateId: body.stateId, sortOrder: keyBetween(loKey, hiKey) },
+      include: { state: true, assignee: true },
+    });
+    return serialize(updated, existing.team.key);
   });
 
   // List — cursor pagination + filters. Soft-deleted rows are excluded (deletedAt: null).
