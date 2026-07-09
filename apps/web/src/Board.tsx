@@ -1,48 +1,32 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPatch } from "./lib/api";
+import { useTeamIssues } from "./lib/useTeamIssues";
 
 interface StateRow {
   id: string;
   name: string;
   color: string;
 }
-interface IssueRow {
-  id: string;
-  identifier: string;
-  title: string;
-  priority: string;
-  sortOrder: string;
-  state: { id: string };
-}
 
 export function Board({ teamId }: { teamId: string }) {
+  const issues = useTeamIssues(teamId); // live: deltas patch this list in real time
   const [states, setStates] = useState<StateRow[]>([]);
-  const [issues, setIssues] = useState<IssueRow[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
 
-  const reload = async () => {
-    const [s, i] = await Promise.all([
-      apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`),
-      apiGet<{ items: IssueRow[] }>(`/api/v1/teams/${teamId}/issues?limit=100`),
-    ]);
-    setStates(s);
-    setIssues(i.items);
-  };
   useEffect(() => {
-    void reload();
+    void apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`).then(setStates);
   }, [teamId]);
 
   const inState = (stateId: string) =>
     issues.filter((i) => i.state.id === stateId).sort((a, b) => (a.sortOrder < b.sortOrder ? -1 : 1));
 
-  // A drop = one move mutation: server computes the sortOrder key between neighbours (one row
-  // written). afterId=null means "top of the column". Then reload (still invalidate-everything — the
-  // sync engine in S06-07 makes this incremental).
+  // A drop calls the move API. We DON'T reload — the resulting delta arrives over the socket and
+  // patches the board for every connected client, including this one. Real-time by construction.
   const move = async (stateId: string, afterId: string | null) => {
     if (!dragId) return;
-    await apiPatch(`/api/v1/issues/${dragId}/move`, { stateId, afterId });
+    const id = dragId;
     setDragId(null);
-    await reload();
+    await apiPatch(`/api/v1/issues/${id}/move`, { stateId, afterId });
   };
 
   return (

@@ -1,6 +1,7 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPost, loginUrl } from "./lib/api";
 import { useSession } from "./lib/session";
+import { useSync } from "./lib/sync";
 import { IssuesPanel } from "./Issues";
 import { Board } from "./Board";
 import { CommandPalette, type Command } from "./CommandPalette";
@@ -113,6 +114,7 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
   const [view, setView] = useState<"list" | "board">("list");
   const [name, setName] = useState("");
   const [key, setKey] = useState("");
+  const { subscribeWorkspace } = useSync();
 
   const load = () =>
     apiGet<TeamRow[]>(`/api/v1/workspaces/${workspace.id}/teams`).then((t) => {
@@ -122,6 +124,8 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
   useEffect(() => {
     void load();
   }, [workspace.id]);
+  // Point the single sync connection at this workspace — deltas for its issues now stream in.
+  useEffect(() => subscribeWorkspace(workspace.id), [workspace.id, subscribeWorkspace]);
 
   const create = async () => {
     if (!name.trim() || !/^[A-Z]{2,6}$/.test(key)) return;
