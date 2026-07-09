@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import fc from "fast-check";
-import { keyBetween, keyAfter } from "./order";
+import { keyBetween, keyAfter, evenKeys, maxKeyLength } from "./order";
 
 describe("keyBetween", () => {
   it("produces a key strictly between two given keys", () => {
@@ -51,5 +51,28 @@ describe("keyBetween", () => {
         expect([...keys].sort()).toEqual(keys);
       }),
     );
+  });
+});
+
+describe("rebalancing (evenKeys) — flaw #2 harvest", () => {
+  it("produces n ascending, uniform-length, short keys", () => {
+    const keys = evenKeys(20);
+    expect(keys).toHaveLength(20);
+    expect([...keys].sort()).toEqual(keys); // ascending
+    expect(new Set(keys.map((k) => k.length)).size).toBe(1); // uniform length
+  });
+
+  it("rebalanced keys are shorter than a degenerate same-slot chain", () => {
+    // Reproduce flaw #2: repeatedly insert between the same two neighbours, growing the key.
+    const lo = keyBetween(null, null);
+    let hi = keyAfter(lo);
+    let longest = hi;
+    for (let i = 0; i < 40; i++) {
+      const mid = keyBetween(lo, hi);
+      hi = mid;
+      longest = mid;
+    }
+    // A rebalanced column of the same size uses uniform, short keys instead.
+    expect(maxKeyLength(evenKeys(42))).toBeLessThan(longest.length);
   });
 });
