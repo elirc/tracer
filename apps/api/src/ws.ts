@@ -3,7 +3,13 @@ import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { prisma, type MutationLog, type User } from "@tracer/db";
-import { ClientMessageSchema, type MutationDelta, type ServerMessage } from "@tracer/shared";
+import {
+  ClientMessageSchema,
+  canSeeDelta,
+  type MembershipView,
+  type MutationDelta,
+  type ServerMessage,
+} from "@tracer/shared";
 import { getUserByToken, SESSION_COOKIE } from "./auth/session";
 import { fanout } from "./lib/fanout";
 
@@ -142,12 +148,17 @@ async function handleSubscribe(
     ws.close();
     return;
   }
+  // Per-team channel authz (flaw #4 fix): a delta carries the teamId it changed; we forward it only
+  // if this member may read that team. The WebSocket now enforces the SAME scoping as REST — a guest
+  // no longer receives deltas for teams they can't see.
+  const access: MembershipView = { role: membership.role, guestTeamIds: membership.guestTeamIds };
 
   // Subscribe FIRST and buffer, so nothing that lands during the backlog query is lost.
   const buffered: MutationDelta[] = [];
   let live = false;
   const unsub = fanout.subscribe((wsId, delta) => {
     if (wsId !== workspaceId) return;
+    if (!canSeeDelta(access, delta.teamId)) return;
     if (live) send(ws, { type: "delta", delta });
     else buffered.push(delta);
   });
@@ -157,7 +168,10 @@ async function handleSubscribe(
     where: { workspaceId, seq: { gt: lastSeq } },
     orderBy: { seq: "asc" },
   });
-  for (const m of backlog) send(ws, { type: "delta", delta: toDelta(m) });
+  for (const m of backlog) {
+    if (!canSeeDelta(access, m.teamId)) continue;
+    send(ws, { type: "delta", delta: toDelta(m) });
+  }
   const maxBacklogSeq = backlog.at(-1)?.seq ?? lastSeq;
 
   // Flush anything buffered during the query that the backlog didn't already include.
