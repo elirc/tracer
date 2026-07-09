@@ -12,6 +12,7 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
+export { Prisma } from "@prisma/client";
 export type {
   Workspace,
   User,
@@ -26,4 +27,5 @@ export type {
   IssueLabel,
   StateType,
   Priority,
+  MutationLog,
 } from "@prisma/client";
