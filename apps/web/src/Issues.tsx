@@ -1,6 +1,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPatch, apiDelete } from "./lib/api";
 import { useTeamIssues } from "./lib/useTeamIssues";
+import { useUndo } from "./lib/undo";
+import { useToast } from "./lib/toast";
 
 interface StateRow {
   id: string;
@@ -13,6 +15,8 @@ const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export function IssuesPanel({ teamId }: { teamId: string }) {
   const { issues, createIssue } = useTeamIssues(teamId); // offline-first store (flaw #1 harvested)
+  const { push } = useUndo();
+  const { show } = useToast();
   const [states, setStates] = useState<StateRow[]>([]);
   const [title, setTitle] = useState("");
 
@@ -54,7 +58,16 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
           <select
             style={select}
             value={i.state.id}
-            onChange={(e) => void patch(i.id, { stateId: e.target.value })}
+            onChange={(e) => {
+              const old = i.state.id;
+              const next = e.target.value;
+              void patch(i.id, { stateId: next });
+              push({
+                label: `state of ${i.identifier}`,
+                undo: () => patch(i.id, { stateId: old }),
+                redo: () => patch(i.id, { stateId: next }),
+              });
+            }}
           >
             {states.map((s) => (
               <option key={s.id} value={s.id}>
@@ -65,7 +78,16 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
           <select
             style={select}
             value={i.priority}
-            onChange={(e) => void patch(i.id, { priority: e.target.value })}
+            onChange={(e) => {
+              const old = i.priority;
+              const next = e.target.value;
+              void patch(i.id, { priority: next });
+              push({
+                label: `priority of ${i.identifier}`,
+                undo: () => patch(i.id, { priority: old }),
+                redo: () => patch(i.id, { priority: next }),
+              });
+            }}
           >
             {PRIORITIES.map((p) => (
               <option key={p} value={p}>
@@ -73,7 +95,19 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
               </option>
             ))}
           </select>
-          <button style={ghost} onClick={() => void remove(i.id)} title="Delete">
+          <button
+            style={ghost}
+            onClick={() => {
+              void remove(i.id);
+              show(`Deleted ${i.identifier} — Cmd/Ctrl+Z to undo`);
+              push({
+                label: `delete ${i.identifier}`,
+                undo: () => apiPatch(`/api/v1/issues/${i.id}/restore`, {}),
+                redo: () => remove(i.id),
+              });
+            }}
+            title="Delete"
+          >
             ✕
           </button>
         </div>
