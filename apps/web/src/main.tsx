@@ -4,6 +4,7 @@ import { App } from "./App";
 import { SessionProvider } from "./lib/session";
 import { KeyboardProvider } from "./lib/keyboard";
 import { ToastProvider } from "./lib/toast";
+import { UndoProvider } from "./lib/undo";
 import { SyncProvider } from "./lib/sync";
 import "./index.css";
 
@@ -14,11 +15,13 @@ ReactDOM.createRoot(root).render(
   <React.StrictMode>
     <ToastProvider>
       <KeyboardProvider>
-        <SessionProvider>
-          <SyncProvider>
-            <App />
-          </SyncProvider>
-        </SessionProvider>
+        <UndoProvider>
+          <SessionProvider>
+            <SyncProvider>
+              <App />
+            </SyncProvider>
+          </SessionProvider>
+        </UndoProvider>
       </KeyboardProvider>
     </ToastProvider>
   </React.StrictMode>,
