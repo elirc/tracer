@@ -10,6 +10,7 @@ export default tseslint.config(
       "**/.turbo/**",
       "**/generated/**",
       "**/*.config.*",
+      "**/e2e/**",
     ],
   },
   js.configs.recommended,
