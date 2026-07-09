@@ -54,7 +54,8 @@ jobs:
           node-version: 20
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm turbo run typecheck lint test build
+      - run: pnpm run lint
+      - run: pnpm turbo run typecheck test build
       # Tracer gates — turn on as the sprints introduce them:
       # - run: pnpm turbo run test:e2e          # S05+ Playwright (incl. keyboard-only journey)
       # - run: pnpm turbo run test:convergence  # S06/S07 sync convergence fuzzer
