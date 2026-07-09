@@ -4,6 +4,7 @@ import { useSession } from "./lib/session";
 import { useSync } from "./lib/sync";
 import { usePresence } from "./lib/usePresence";
 import { IssuesPanel } from "./Issues";
+import { ShortcutHelp } from "./ShortcutHelp";
 import { Board } from "./Board";
 import { CommandPalette, type Command } from "./CommandPalette";
 import { MyIssues } from "./MyIssues";
@@ -41,12 +42,15 @@ export function App() {
         <span style={{ color: "var(--muted)" }}>
           Signed in as <strong>{user.name ?? user.email}</strong>
         </span>
-        <button
-          style={ghostButton}
-          onClick={() => apiPost("/auth/logout").then(refresh)}
-        >
-          Log out
-        </button>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ThemeToggle />
+          <button
+            style={ghostButton}
+            onClick={() => apiPost("/auth/logout").then(refresh)}
+          >
+            Log out
+          </button>
+        </div>
       </div>
       <section style={panel}>
         <h2>My Issues</h2>
@@ -207,10 +211,47 @@ function TeamPresence({ teamId }: { teamId: string }) {
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
-    <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
-      <h1 style={{ color: "var(--accent)" }}>Tracer</h1>
-      {children}
-    </main>
+    <>
+      {/* Skip link: the first tab stop, visually hidden until focused (see .skip-link in index.css).
+          Keyboard and screen-reader users jump past the chrome straight to content — WCAG 2.4.1. */}
+      <a href="#main" className="skip-link">
+        Skip to content
+      </a>
+      <main id="main" style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
+        <h1 style={{ color: "var(--accent)" }}>Tracer</h1>
+        {children}
+      </main>
+      {/* Mounted once, globally: registers the `?` shortcut and renders the help overlay on demand. */}
+      <ShortcutHelp />
+    </>
+  );
+}
+
+/**
+ * Light/dark theme toggle. The default follows the OS (prefers-color-scheme, handled in CSS); once the
+ * user picks, we persist the choice and stamp `data-theme` on <html> so it wins over the media query.
+ * Respecting the system preference by default is the accessible default — some users need light, some
+ * need dark, and some are photophobic. Don't force one.
+ */
+function ThemeToggle() {
+  const [theme, setTheme] = useState<"light" | "dark" | null>(
+    () => (localStorage.getItem("tracer:theme") as "light" | "dark" | null),
+  );
+  useEffect(() => {
+    if (!theme) return;
+    document.documentElement.setAttribute("data-theme", theme);
+    localStorage.setItem("tracer:theme", theme);
+  }, [theme]);
+  const resolved = theme ?? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark");
+  return (
+    <button
+      style={ghostButton}
+      onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}
+      aria-label={`Switch to ${resolved === "dark" ? "light" : "dark"} theme`}
+      title="Toggle theme"
+    >
+      {resolved === "dark" ? "☀ Light" : "🌙 Dark"}
+    </button>
   );
 }
 
