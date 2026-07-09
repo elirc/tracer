@@ -1,16 +1,31 @@
+import { EventEmitter } from "node:events";
 import type { IncomingMessage, Server } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import { prisma, type MutationLog, type User } from "@tracer/db";
-import { SubscribeSchema, type MutationDelta, type ServerMessage } from "@tracer/shared";
+import { ClientMessageSchema, type MutationDelta, type ServerMessage } from "@tracer/shared";
 import { getUserByToken, SESSION_COOKIE } from "./auth/session";
 import { fanout } from "./lib/fanout";
 
 const HEARTBEAT_MS = 30_000;
 
+// Ephemeral presence bus — in-process, NEVER persisted. Presence ("Ada is viewing ENG") is the
+// opposite of a mutation: high-churn, worthless a second later, and wrong to store. Routing it on a
+// separate path from the durable mutation log is the S09 lesson (ADR-0008).
+const presenceBus = new EventEmitter();
+presenceBus.setMaxListeners(10_000);
+
+interface PresenceEvent {
+  workspaceId: string;
+  userId: string;
+  name: string | null;
+  teamId: string;
+}
+
 interface LiveSocket extends WebSocket {
   isAlive?: boolean;
   user?: User;
+  workspaceId?: string;
 }
 
 /**
@@ -37,16 +52,37 @@ export function attachWebSocketGateway(server: Server): WebSocketServer {
       ws.isAlive = true;
     });
 
+    // Forward other users' presence in this socket's workspace (skip our own).
+    const onPresence = (p: PresenceEvent) => {
+      if (p.workspaceId !== ws.workspaceId || p.userId === ws.user?.id) return;
+      send(ws, { type: "presence", userId: p.userId, name: p.name, teamId: p.teamId });
+    };
+    presenceBus.on("presence", onPresence);
+
     let unsubscribe: (() => void) | null = null;
     ws.on("message", (raw) => {
-      const parsed = SubscribeSchema.safeParse(safeJson(raw.toString()));
+      const parsed = ClientMessageSchema.safeParse(safeJson(raw.toString()));
       if (!parsed.success) return;
-      void handleSubscribe(ws, parsed.data.workspaceId, parsed.data.lastSeq, (u) => {
-        unsubscribe?.();
-        unsubscribe = u;
-      });
+      const msg = parsed.data;
+      if (msg.type === "subscribe") {
+        ws.workspaceId = msg.workspaceId;
+        void handleSubscribe(ws, msg.workspaceId, msg.lastSeq, (u) => {
+          unsubscribe?.();
+          unsubscribe = u;
+        });
+      } else if (msg.type === "presence" && ws.user && ws.workspaceId) {
+        presenceBus.emit("presence", {
+          workspaceId: ws.workspaceId,
+          userId: ws.user.id,
+          name: ws.user.name,
+          teamId: msg.teamId,
+        } satisfies PresenceEvent);
+      }
     });
-    ws.on("close", () => unsubscribe?.());
+    ws.on("close", () => {
+      unsubscribe?.();
+      presenceBus.off("presence", onPresence);
+    });
   });
 
   const heartbeat = setInterval(() => {

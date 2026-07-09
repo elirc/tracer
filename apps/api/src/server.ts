@@ -11,6 +11,7 @@ import { inviteRoutes } from "./routes/invites";
 import { issueRoutes } from "./routes/issues";
 import { workflowStateRoutes } from "./routes/workflow-states";
 import { meRoutes } from "./routes/me";
+import { commentRoutes } from "./routes/comments";
 import { AppError } from "./errors";
 
 /**
@@ -46,5 +47,6 @@ export function buildServer(): FastifyInstance {
   void app.register(issueRoutes);
   void app.register(workflowStateRoutes);
   void app.register(meRoutes);
+  void app.register(commentRoutes);
   return app;
 }
