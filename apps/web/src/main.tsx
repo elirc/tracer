@@ -4,6 +4,7 @@ import { App } from "./App";
 import { SessionProvider } from "./lib/session";
 import { KeyboardProvider } from "./lib/keyboard";
 import { ToastProvider } from "./lib/toast";
+import { SyncProvider } from "./lib/sync";
 import "./index.css";
 
 const root = document.getElementById("root");
@@ -14,7 +15,9 @@ ReactDOM.createRoot(root).render(
     <ToastProvider>
       <KeyboardProvider>
         <SessionProvider>
-          <App />
+          <SyncProvider>
+            <App />
+          </SyncProvider>
         </SessionProvider>
       </KeyboardProvider>
     </ToastProvider>

@@ -32,8 +32,7 @@ export function clearSessionCookie(reply: FastifyReply): void {
   reply.clearCookie(COOKIE, { path: "/" });
 }
 
-export async function getSessionUser(req: FastifyRequest): Promise<User | null> {
-  const token = req.cookies[COOKIE];
+export async function getUserByToken(token: string | undefined): Promise<User | null> {
   if (!token) return null;
   const session = await prisma.session.findUnique({
     where: { tokenHash: hashToken(token) },
@@ -42,6 +41,13 @@ export async function getSessionUser(req: FastifyRequest): Promise<User | null> 
   if (!session || session.expiresAt < new Date()) return null;
   return session.user;
 }
+
+export function getSessionUser(req: FastifyRequest): Promise<User | null> {
+  return getUserByToken(req.cookies[COOKIE]);
+}
+
+/** The cookie name — the WS upgrade handler parses the raw header for it. */
+export const SESSION_COOKIE = COOKIE;
 
 export async function destroySession(req: FastifyRequest): Promise<void> {
   const token = req.cookies[COOKIE];

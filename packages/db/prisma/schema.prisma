@@ -56,11 +56,35 @@ model Workspace {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
+  // Monotonic per-workspace mutation sequence — the spine of the sync engine (S06).
+  mutationSeq Int    @default(0)
   createdAt DateTime @default(now())
 
   teams       Team[]
   memberships Membership[]
   invites     Invite[]
+  mutations   MutationLog[]
+}
+
+// Every issue-domain write is recorded here as a sequenced fact. Clients bootstrap by asking for
+// everything since their lastSeq, then receive new rows live. "The log is truth; pub/sub is a hint."
+model MutationLog {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  seq         Int
+  clientId    String?
+  mutationId  String?
+  entity      String // e.g. "issue"
+  entityId    String
+  op          String // "create" | "update" | "delete"
+  // teamId lets a per-team channel filter deltas (S13 fixes flaw #4 using this).
+  teamId      String?
+  patch       Json
+  createdAt   DateTime @default(now())
+
+  @@unique([workspaceId, seq])
+  @@index([workspaceId, seq])
 }
 
 model Team {

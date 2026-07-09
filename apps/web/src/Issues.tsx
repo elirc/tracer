@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPost, apiPatch, apiDelete } from "./lib/api";
+import { useTeamIssues } from "./lib/useTeamIssues";
 
 interface StateRow {
   id: string;
@@ -7,54 +8,27 @@ interface StateRow {
   type: string;
   color: string;
 }
-interface IssueRow {
-  id: string;
-  identifier: string;
-  title: string;
-  priority: string;
-  state: { id: string; name: string; type: string };
-  assignee: { name: string | null; email: string } | null;
-}
 
 const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export function IssuesPanel({ teamId }: { teamId: string }) {
+  const issues = useTeamIssues(teamId); // live: no more invalidate-everything (flaw #1 harvested)
   const [states, setStates] = useState<StateRow[]>([]);
-  const [issues, setIssues] = useState<IssueRow[]>([]);
   const [title, setTitle] = useState("");
 
-  // The deliberate "classic" mutation layer (ADR-0002): after ANY change we refetch the WHOLE
-  // list. Correct but crude — this invalidate-everything approach is exactly what the sync engine
-  // in Sprint 06-07 replaces with targeted, real-time updates. Open the network tab and count the
-  // refetches per edit: that cost is why this course exists.
-  const reload = async () => {
-    const [s, i] = await Promise.all([
-      apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`),
-      apiGet<{ items: IssueRow[] }>(`/api/v1/teams/${teamId}/issues`),
-    ]);
-    setStates(s);
-    setIssues(i.items);
-  };
   useEffect(() => {
-    void reload();
+    void apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`).then(setStates);
   }, [teamId]);
 
+  // Mutations just call the API. The delta comes back over the socket and patches the list — for
+  // this client and every other one. No reload() anywhere.
   const create = async () => {
     if (!title.trim()) return;
     await apiPost(`/api/v1/teams/${teamId}/issues`, { title: title.trim() });
     setTitle("");
-    await reload();
   };
-
-  const patch = async (id: string, data: Record<string, unknown>) => {
-    await apiPatch(`/api/v1/issues/${id}`, data);
-    await reload();
-  };
-
-  const remove = async (id: string) => {
-    await apiDelete(`/api/v1/issues/${id}`);
-    await reload();
-  };
+  const patch = (id: string, data: Record<string, unknown>) => apiPatch(`/api/v1/issues/${id}`, data);
+  const remove = (id: string) => apiDelete(`/api/v1/issues/${id}`);
 
   return (
     <div style={{ marginTop: 16 }}>
