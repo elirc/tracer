@@ -4,6 +4,7 @@ import { useSession } from "./lib/session";
 import { IssuesPanel } from "./Issues";
 import { Board } from "./Board";
 import { CommandPalette, type Command } from "./CommandPalette";
+import { MyIssues } from "./MyIssues";
 
 interface WorkspaceRow {
   id: string;
@@ -45,6 +46,10 @@ export function App() {
           Log out
         </button>
       </div>
+      <section style={panel}>
+        <h2>My Issues</h2>
+        <MyIssues />
+      </section>
       <Workspaces />
     </Shell>
   );
