@@ -1,60 +1,159 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { WorkspaceListSchema, type Workspace } from "@tracer/shared";
-import { useEcho } from "./lib/useWs";
-import { workspaceLabel } from "./lib/format";
+import { apiGet, apiPost, loginUrl } from "./lib/api";
+import { useSession } from "./lib/session";
 
-const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:3001";
-const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/ws";
+interface WorkspaceRow {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+interface TeamRow {
+  id: string;
+  name: string;
+  key: string;
+}
 
 export function App() {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [error, setError] = useState<string | null>(null);
-  const { status, lastEcho, sendEcho } = useEcho(WS_URL);
+  const { user, loading, refresh } = useSession();
 
+  if (loading) return <Shell>Loading…</Shell>;
+  if (!user) {
+    return (
+      <Shell>
+        <p style={{ color: "var(--muted)" }}>Sign in to continue.</p>
+        <a style={button} href={loginUrl}>
+          Sign in (dev)
+        </a>
+      </Shell>
+    );
+  }
+
+  return (
+    <Shell>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ color: "var(--muted)" }}>
+          Signed in as <strong>{user.name ?? user.email}</strong>
+        </span>
+        <button
+          style={ghostButton}
+          onClick={() => apiPost("/auth/logout").then(refresh)}
+        >
+          Log out
+        </button>
+      </div>
+      <Workspaces />
+    </Shell>
+  );
+}
+
+function Workspaces() {
+  const [rows, setRows] = useState<WorkspaceRow[]>([]);
+  const [selected, setSelected] = useState<WorkspaceRow | null>(null);
+  const [name, setName] = useState("");
+
+  const load = () =>
+    apiGet<WorkspaceRow[]>("/api/v1/workspaces").then((r) => {
+      setRows(r);
+      setSelected((s) => s ?? r[0] ?? null);
+    });
   useEffect(() => {
-    fetch(`${API_URL}/api/v1/workspaces`)
-      .then((r) => r.json())
-      .then((data: unknown) => setWorkspaces(WorkspaceListSchema.parse(data)))
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)));
+    void load();
   }, []);
 
+  const create = async () => {
+    if (!name.trim()) return;
+    const slug = name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+    await apiPost<WorkspaceRow>("/api/v1/workspaces", { name: name.trim(), slug });
+    setName("");
+    await load();
+  };
+
+  return (
+    <section style={panel}>
+      <h2>Workspaces</h2>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {rows.map((w) => (
+          <button
+            key={w.id}
+            style={{ ...chip, ...(selected?.id === w.id ? chipActive : {}) }}
+            onClick={() => setSelected(w)}
+          >
+            {w.name} · <span style={{ color: "var(--muted)" }}>{w.role}</span>
+          </button>
+        ))}
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+        <input
+          style={input}
+          placeholder="New workspace name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+        />
+        <button style={button} onClick={() => void create()}>
+          Create
+        </button>
+      </div>
+      {selected && <Teams workspace={selected} />}
+    </section>
+  );
+}
+
+function Teams({ workspace }: { workspace: WorkspaceRow }) {
+  const [teams, setTeams] = useState<TeamRow[]>([]);
+  const [name, setName] = useState("");
+  const [key, setKey] = useState("");
+
+  const load = () => apiGet<TeamRow[]>(`/api/v1/workspaces/${workspace.id}/teams`).then(setTeams);
+  useEffect(() => {
+    void load();
+  }, [workspace.id]);
+
+  const create = async () => {
+    if (!name.trim() || !/^[A-Z]{2,6}$/.test(key)) return;
+    await apiPost(`/api/v1/workspaces/${workspace.id}/teams`, { name: name.trim(), key });
+    setName("");
+    setKey("");
+    await load();
+  };
+
+  return (
+    <div style={{ marginTop: 16 }}>
+      <h3>
+        Teams in {workspace.name}{" "}
+        <span style={{ color: "var(--muted)", fontWeight: 400 }}>({workspace.role})</span>
+      </h3>
+      <ul>
+        {teams.map((t) => (
+          <li key={t.id}>
+            <code>{t.key}</code> — {t.name}
+          </li>
+        ))}
+        {teams.length === 0 && <li style={{ color: "var(--muted)" }}>No teams visible.</li>}
+      </ul>
+      {workspace.role === "ADMIN" && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <input style={input} placeholder="Team name" value={name} onChange={(e) => setName(e.target.value)} />
+          <input
+            style={{ ...input, width: 90 }}
+            placeholder="KEY"
+            value={key}
+            onChange={(e) => setKey(e.target.value.toUpperCase())}
+          />
+          <button style={button} onClick={() => void create()}>
+            Add team
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Shell({ children }: { children: React.ReactNode }) {
   return (
     <main style={{ maxWidth: 720, margin: "40px auto", padding: "0 16px" }}>
       <h1 style={{ color: "var(--accent)" }}>Tracer</h1>
-      <p style={{ color: "var(--muted)" }}>Walking skeleton — Sprint 01 (DB → API → UI + WS echo).</p>
-
-      <section style={panel}>
-        <h2>Workspaces</h2>
-        {error && <p style={{ color: "salmon" }}>Failed to load: {error}</p>}
-        {!error && workspaces.length === 0 && (
-          <p style={{ color: "var(--muted)" }}>
-            No workspaces yet — run <code>pnpm db:up &amp;&amp; pnpm db:seed</code>.
-          </p>
-        )}
-        <ul>
-          {workspaces.map((w) => (
-            <li key={w.id}>{workspaceLabel(w)}</li>
-          ))}
-        </ul>
-      </section>
-
-      <section style={panel}>
-        <h2>WebSocket echo</h2>
-        <p>
-          Status:{" "}
-          <strong style={{ color: status === "open" ? "var(--ok)" : "var(--muted)" }}>
-            {status}
-          </strong>
-        </p>
-        <button style={button} onClick={() => sendEcho(`ping @ ${new Date().toLocaleTimeString()}`)}>
-          Send echo
-        </button>
-        {lastEcho && (
-          <p style={{ color: "var(--muted)" }}>
-            Echoed back: <code>{lastEcho.payload}</code>
-          </p>
-        )}
-      </section>
+      {children}
     </main>
   );
 }
@@ -66,7 +165,6 @@ const panel: CSSProperties = {
   padding: 16,
   marginTop: 16,
 };
-
 const button: CSSProperties = {
   background: "var(--accent)",
   color: "white",
@@ -74,4 +172,30 @@ const button: CSSProperties = {
   borderRadius: 8,
   padding: "8px 14px",
   cursor: "pointer",
+  textDecoration: "none",
+  display: "inline-block",
+};
+const ghostButton: CSSProperties = {
+  background: "transparent",
+  color: "var(--muted)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  padding: "6px 12px",
+  cursor: "pointer",
+};
+const chip: CSSProperties = {
+  background: "var(--bg)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 999,
+  padding: "6px 12px",
+  cursor: "pointer",
+};
+const chipActive: CSSProperties = { borderColor: "var(--accent)", color: "var(--accent)" };
+const input: CSSProperties = {
+  background: "var(--bg)",
+  color: "var(--text)",
+  border: "1px solid var(--border)",
+  borderRadius: 8,
+  padding: "8px 10px",
 };
