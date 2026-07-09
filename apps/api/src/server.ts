@@ -8,6 +8,8 @@ import { workspaceRoutes } from "./routes/workspaces";
 import { authRoutes } from "./routes/auth";
 import { teamRoutes } from "./routes/teams";
 import { inviteRoutes } from "./routes/invites";
+import { issueRoutes } from "./routes/issues";
+import { workflowStateRoutes } from "./routes/workflow-states";
 import { AppError } from "./errors";
 
 /**
@@ -40,5 +42,7 @@ export function buildServer(): FastifyInstance {
   void app.register(workspaceRoutes);
   void app.register(teamRoutes);
   void app.register(inviteRoutes);
+  void app.register(issueRoutes);
+  void app.register(workflowStateRoutes);
   return app;
 }
