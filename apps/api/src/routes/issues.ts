@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { prisma, type Priority, type StateType } from "@tracer/db";
-import { keyAfter, keyBetween, FilterNodeSchema } from "@tracer/shared";
+import { keyAfter, keyBetween, evenKeys, FilterNodeSchema } from "@tracer/shared";
 import { requireUser, requireTeamAccess } from "../auth/guards";
 import { decodeCursor, encodeCursor } from "../lib/pagination";
 import { recordMutation } from "../lib/mutations";
@@ -338,5 +338,43 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
       data: payload,
     });
     return payload;
+  });
+
+  // Rebalance a team's sortOrder keys (harvest of flaw #2). When repeated same-slot inserts have
+  // grown keys long, reassign each state column to uniform, short, evenly-spaced keys. Each change
+  // is an ordinary update mutation — so a rebalance flows through the sync engine and clients
+  // re-order live. (In production this is a background job triggered by a key-length metric.)
+  app.post("/api/v1/teams/:teamId/rebalance", async (req) => {
+    const user = await requireUser(req);
+    const { teamId } = req.params as { teamId: string };
+    const { team } = await requireTeamAccess(user.id, teamId);
+    const states = await prisma.workflowState.findMany({ where: { teamId }, select: { id: true } });
+    let rebalanced = 0;
+    for (const s of states) {
+      const issues = await prisma.issue.findMany({
+        where: { teamId, stateId: s.id, deletedAt: null },
+        orderBy: { sortOrder: "asc" },
+        select: { id: true },
+      });
+      if (issues.length === 0) continue;
+      const keys = evenKeys(issues.length);
+      for (let i = 0; i < issues.length; i++) {
+        const updated = await prisma.issue.update({
+          where: { id: issues[i]!.id },
+          data: { sortOrder: keys[i]! },
+          include: { state: true, assignee: true },
+        });
+        await recordMutation({
+          workspaceId: team.workspaceId,
+          teamId,
+          entity: "issue",
+          entityId: updated.id,
+          op: "update",
+          data: serialize(updated, team.key),
+        });
+        rebalanced++;
+      }
+    }
+    return { rebalanced };
   });
 }

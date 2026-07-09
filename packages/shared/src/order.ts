@@ -44,3 +44,38 @@ export function keyBetween(a: string | null, b: string | null): string {
 export function keyAfter(last: string | null): string {
   return keyBetween(last, null);
 }
+
+function toBaseN(value: number, digits: number): string {
+  let out = "";
+  for (let i = 0; i < digits; i++) {
+    out = DIGITS[value % BASE] + out;
+    value = Math.floor(value / BASE);
+  }
+  return out;
+}
+
+/**
+ * Rebalancing (S12, harvest of flaw #2). When repeated same-slot inserts have grown the keys long,
+ * we reassign the whole column to `n` evenly-spaced, SHORT keys. The new keys are uniform length,
+ * so future inserts between them start short again. A rebalance emits ordinary mutations (each issue
+ * gets a new sortOrder), so it flows through the sync engine like any other change.
+ */
+export function evenKeys(n: number): string[] {
+  if (n <= 0) return [];
+  let digits = 1;
+  while (Math.pow(BASE, digits) < n + 2) digits++;
+  const span = Math.pow(BASE, digits);
+  const keys: string[] = [];
+  for (let i = 1; i <= n; i++) {
+    let pos = Math.round((i * span) / (n + 1));
+    if (pos < 1) pos = 1;
+    if (pos > span - 1) pos = span - 1;
+    keys.push(toBaseN(pos, digits));
+  }
+  return keys;
+}
+
+/** The metric that tells you when to rebalance (Sprint 12 alerts on its p95). */
+export function maxKeyLength(keys: string[]): number {
+  return keys.reduce((m, k) => Math.max(m, k.length), 0);
+}
