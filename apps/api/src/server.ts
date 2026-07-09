@@ -13,6 +13,7 @@ import { workflowStateRoutes } from "./routes/workflow-states";
 import { meRoutes } from "./routes/me";
 import { commentRoutes } from "./routes/comments";
 import { savedViewRoutes } from "./routes/saved-views";
+import { searchRoutes } from "./routes/search";
 import { AppError } from "./errors";
 
 /**
@@ -50,5 +51,6 @@ export function buildServer(): FastifyInstance {
   void app.register(meRoutes);
   void app.register(commentRoutes);
   void app.register(savedViewRoutes);
+  void app.register(searchRoutes);
   return app;
 }
