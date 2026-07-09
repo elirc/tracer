@@ -296,4 +296,30 @@ export async function issueRoutes(app: FastifyInstance): Promise<void> {
     reply.code(204);
     return null;
   });
+
+  // Restore a soft-deleted issue — the undo of delete. It emits an `update` delta so every client
+  // that removed the issue on the delete delta adds it back. Undo is just another mutation flowing
+  // through the same sync pipeline (the S07 payoff: it syncs, and would work offline).
+  app.patch("/api/v1/issues/:id/restore", async (req) => {
+    const user = await requireUser(req);
+    const { id } = req.params as { id: string };
+    const existing = await prisma.issue.findUnique({ where: { id }, include: { team: true } });
+    if (!existing) throw new AppError(404, "NOT_FOUND", "Issue not found");
+    const { team } = await requireTeamAccess(user.id, existing.teamId);
+    const restored = await prisma.issue.update({
+      where: { id },
+      data: { deletedAt: null },
+      include: { state: true, assignee: true },
+    });
+    const payload = serialize(restored, team.key);
+    await recordMutation({
+      workspaceId: team.workspaceId,
+      teamId: existing.teamId,
+      entity: "issue",
+      entityId: id,
+      op: "update",
+      data: payload,
+    });
+    return payload;
+  });
 }
