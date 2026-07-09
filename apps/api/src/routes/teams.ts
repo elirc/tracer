@@ -3,6 +3,7 @@ import { z } from "zod";
 import { prisma } from "@tracer/db";
 import { visibleTeamIds } from "@tracer/shared";
 import { requireUser, requireMembership, requireAdmin } from "../auth/guards";
+import { DEFAULT_STATES } from "../lib/workflow";
 
 const CreateTeam = z.object({
   name: z.string().min(1),
@@ -33,8 +34,15 @@ export async function teamRoutes(app: FastifyInstance): Promise<void> {
     const m = await requireMembership(user.id, wsId);
     requireAdmin(m);
     const body = CreateTeam.parse(req.body);
+    // A team is born with its default workflow states in the same transaction, so it always
+    // has a valid state to put issues in.
     const team = await prisma.team.create({
-      data: { workspaceId: wsId, name: body.name, key: body.key },
+      data: {
+        workspaceId: wsId,
+        name: body.name,
+        key: body.key,
+        workflowStates: { create: DEFAULT_STATES.map((s) => ({ ...s })) },
+      },
     });
     reply.code(201);
     return { id: team.id, name: team.name, key: team.key };

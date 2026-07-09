@@ -20,4 +20,10 @@ export type {
   Session,
   Invite,
   Role,
+  WorkflowState,
+  Label,
+  Issue,
+  IssueLabel,
+  StateType,
+  Priority,
 } from "@prisma/client";
