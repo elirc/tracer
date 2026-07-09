@@ -10,6 +10,8 @@ export const MutationDeltaSchema = z.object({
   entityId: z.string(),
   op: z.enum(["create", "update", "delete"]),
   teamId: z.string().nullable(),
+  // The originating client mutationId — lets a client ack (drop) its own optimistic mutation.
+  mutationId: z.string().nullable(),
   data: z.unknown(), // serialized entity for create/update; null for delete
 });
 export type MutationDelta = z.infer<typeof MutationDeltaSchema>;

@@ -84,6 +84,9 @@ model MutationLog {
   createdAt   DateTime @default(now())
 
   @@unique([workspaceId, seq])
+  // Dedupe key for exactly-once-in-effect (S07). mutationId is nullable, and Postgres treats NULLs
+  // as distinct, so legacy null rows coexist while client-generated ids are enforced unique.
+  @@unique([workspaceId, mutationId])
   @@index([workspaceId, seq])
 }
 

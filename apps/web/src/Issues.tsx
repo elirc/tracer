@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { apiGet, apiPost, apiPatch, apiDelete } from "./lib/api";
+import { apiGet, apiPatch, apiDelete } from "./lib/api";
 import { useTeamIssues } from "./lib/useTeamIssues";
 
 interface StateRow {
@@ -12,7 +12,7 @@ interface StateRow {
 const PRIORITIES = ["NONE", "LOW", "MEDIUM", "HIGH", "URGENT"];
 
 export function IssuesPanel({ teamId }: { teamId: string }) {
-  const issues = useTeamIssues(teamId); // live: no more invalidate-everything (flaw #1 harvested)
+  const { issues, createIssue } = useTeamIssues(teamId); // offline-first store (flaw #1 harvested)
   const [states, setStates] = useState<StateRow[]>([]);
   const [title, setTitle] = useState("");
 
@@ -20,11 +20,11 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
     void apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`).then(setStates);
   }, [teamId]);
 
-  // Mutations just call the API. The delta comes back over the socket and patches the list — for
-  // this client and every other one. No reload() anywhere.
+  // Create goes through the store: optimistic overlay + client mutationId (server dedupes on retry).
+  // Edits/deletes call the API; the returned delta patches the list for every client.
   const create = async () => {
     if (!title.trim()) return;
-    await apiPost(`/api/v1/teams/${teamId}/issues`, { title: title.trim() });
+    await createIssue(title.trim());
     setTitle("");
   };
   const patch = (id: string, data: Record<string, unknown>) => apiPatch(`/api/v1/issues/${id}`, data);

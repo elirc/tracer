@@ -9,7 +9,7 @@ interface StateRow {
 }
 
 export function Board({ teamId }: { teamId: string }) {
-  const issues = useTeamIssues(teamId); // live: deltas patch this list in real time
+  const { issues } = useTeamIssues(teamId); // live + offline-first: deltas patch this list
   const [states, setStates] = useState<StateRow[]>([]);
   const [dragId, setDragId] = useState<string | null>(null);
 
