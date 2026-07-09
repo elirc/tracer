@@ -28,3 +28,14 @@ export function visibleTeamIds(m: MembershipView, allTeamIds: string[]): string[
   if (m.role === "ADMIN" || m.role === "MEMBER") return allTeamIds;
   return allTeamIds.filter((id) => m.guestTeamIds.includes(id));
 }
+
+/**
+ * May this member receive a sync delta? (S13, the flaw-#4 fix.) A delta carries the `teamId` of the
+ * entity it changed; a workspace-level delta (teamId null) is visible to any member. Team-scoped
+ * deltas are gated by the SAME team-access rule as REST — so the WebSocket can't leak what the API
+ * won't. Authorization must hold on every transport, not just the one you remembered.
+ */
+export function canSeeDelta(m: MembershipView, teamId: string | null): boolean {
+  if (teamId === null) return true;
+  return canAccessTeam(m, teamId);
+}

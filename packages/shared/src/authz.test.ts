@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { canAccessTeam, isAdmin, visibleTeamIds, type MembershipView } from "./authz";
+import {
+  canAccessTeam,
+  isAdmin,
+  visibleTeamIds,
+  canSeeDelta,
+  type MembershipView,
+} from "./authz";
 
 const admin: MembershipView = { role: "ADMIN", guestTeamIds: [] };
 const member: MembershipView = { role: "MEMBER", guestTeamIds: [] };
@@ -27,5 +33,21 @@ describe("authz matrix", () => {
     const all = ["team_eng", "team_design", "team_ops"];
     expect(visibleTeamIds(admin, all)).toEqual(all);
     expect(visibleTeamIds(guest, all)).toEqual(["team_eng"]);
+  });
+});
+
+describe("canSeeDelta — channel authz (flaw #4 fix)", () => {
+  it("everyone sees workspace-level deltas (teamId null)", () => {
+    expect(canSeeDelta(guest, null)).toBe(true);
+  });
+
+  it("a guest does NOT receive deltas for a team they can't read", () => {
+    expect(canSeeDelta(guest, "team_eng")).toBe(true); // granted
+    expect(canSeeDelta(guest, "team_design")).toBe(false); // the leak this closes
+  });
+
+  it("members/admins see all team deltas", () => {
+    expect(canSeeDelta(member, "team_design")).toBe(true);
+    expect(canSeeDelta(admin, "team_ops")).toBe(true);
   });
 });
