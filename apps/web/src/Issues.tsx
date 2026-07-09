@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react";
-import { apiGet, apiPatch, apiDelete } from "./lib/api";
+import { apiGet, apiPost, apiPatch, apiDelete } from "./lib/api";
+import { evaluate, type FilterNode } from "@tracer/shared";
 import { useTeamIssues } from "./lib/useTeamIssues";
 import { useUndo } from "./lib/undo";
 import { useToast } from "./lib/toast";
@@ -21,10 +22,23 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
   const [states, setStates] = useState<StateRow[]>([]);
   const [title, setTitle] = useState("");
   const [expanded, setExpanded] = useState<string | null>(null);
+  const [filter, setFilter] = useState<FilterNode | null>(null);
+  const [views, setViews] = useState<{ id: string; name: string; filter: FilterNode }[]>([]);
 
   useEffect(() => {
     void apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`).then(setStates);
+    void apiGet<{ id: string; name: string; filter: FilterNode }[]>(
+      `/api/v1/teams/${teamId}/views`,
+    ).then(setViews);
   }, [teamId]);
+
+  // Dual evaluation in action: the SAME AST that compiles to SQL on the server runs here as a pure
+  // predicate over the local store — instant, no round-trip.
+  const shown = filter
+    ? issues.filter((i) =>
+        evaluate(filter, { stateType: i.state.type, priority: i.priority, assigneeId: null }),
+      )
+    : issues;
 
   // Create goes through the store: optimistic overlay + client mutationId (server dedupes on retry).
   // Edits/deletes call the API; the returned delta patches the list for every client.
@@ -52,8 +66,47 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
           Add issue
         </button>
       </div>
-      {issues.length === 0 && <p style={{ color: "var(--muted)" }}>No issues yet.</p>}
-      {issues.map((i) => (
+      <div style={{ display: "flex", gap: 6, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <button style={filter === null ? button : select} onClick={() => setFilter(null)}>
+          All
+        </button>
+        <button
+          style={select}
+          onClick={() => setFilter({ kind: "condition", field: "stateType", op: "eq", value: "STARTED" })}
+        >
+          Started
+        </button>
+        <button
+          style={select}
+          onClick={() =>
+            setFilter({ kind: "condition", field: "priority", op: "in", value: ["HIGH", "URGENT"] })
+          }
+        >
+          High/Urgent
+        </button>
+        {filter && (
+          <button
+            style={select}
+            onClick={() => {
+              const name = window.prompt("Save view as:");
+              if (name) void apiPost(`/api/v1/teams/${teamId}/views`, { name, filter }).then(() => {
+                void apiGet<{ id: string; name: string; filter: FilterNode }[]>(
+                  `/api/v1/teams/${teamId}/views`,
+                ).then(setViews);
+              });
+            }}
+          >
+            + Save view
+          </button>
+        )}
+        {views.map((v) => (
+          <button key={v.id} style={select} onClick={() => setFilter(v.filter)}>
+            ★ {v.name}
+          </button>
+        ))}
+      </div>
+      {shown.length === 0 && <p style={{ color: "var(--muted)" }}>No issues match.</p>}
+      {shown.map((i) => (
         <div key={i.id}>
           <div style={row}>
           <code style={{ color: "var(--muted)", minWidth: 72 }}>{i.identifier}</code>

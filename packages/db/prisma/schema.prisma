@@ -104,6 +104,7 @@ model Team {
   workflowStates WorkflowState[]
   labels         Label[]
   issues         Issue[]
+  savedViews     SavedView[]
 
   @@unique([workspaceId, key])
 }
@@ -207,6 +208,19 @@ model Comment {
   createdAt DateTime @default(now())
 
   @@index([issueId, createdAt])
+}
+
+// A saved view is a stored filter AST (S10) — a feature turned into DATA. It's a synced entity, so
+// creating one streams to every client like any mutation.
+model SavedView {
+  id        String   @id @default(cuid())
+  teamId    String
+  team      Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  name      String
+  filter    Json
+  createdAt DateTime @default(now())
+
+  @@index([teamId, createdAt])
 }
 
 model IssueLabel {

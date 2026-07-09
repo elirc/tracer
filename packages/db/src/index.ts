@@ -29,4 +29,5 @@ export type {
   Priority,
   MutationLog,
   Comment,
+  SavedView,
 } from "@prisma/client";
