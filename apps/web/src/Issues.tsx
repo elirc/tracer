@@ -3,6 +3,7 @@ import { apiGet, apiPatch, apiDelete } from "./lib/api";
 import { useTeamIssues } from "./lib/useTeamIssues";
 import { useUndo } from "./lib/undo";
 import { useToast } from "./lib/toast";
+import { Comments } from "./Comments";
 
 interface StateRow {
   id: string;
@@ -19,6 +20,7 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
   const { show } = useToast();
   const [states, setStates] = useState<StateRow[]>([]);
   const [title, setTitle] = useState("");
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     void apiGet<StateRow[]>(`/api/v1/teams/${teamId}/workflow-states`).then(setStates);
@@ -52,7 +54,8 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
       </div>
       {issues.length === 0 && <p style={{ color: "var(--muted)" }}>No issues yet.</p>}
       {issues.map((i) => (
-        <div key={i.id} style={row}>
+        <div key={i.id}>
+          <div style={row}>
           <code style={{ color: "var(--muted)", minWidth: 72 }}>{i.identifier}</code>
           <span style={{ flex: 1 }}>{i.title}</span>
           <select
@@ -97,6 +100,13 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
           </select>
           <button
             style={ghost}
+            onClick={() => setExpanded(expanded === i.id ? null : i.id)}
+            title="Comments"
+          >
+            💬
+          </button>
+          <button
+            style={ghost}
             onClick={() => {
               void remove(i.id);
               show(`Deleted ${i.identifier} — Cmd/Ctrl+Z to undo`);
@@ -110,6 +120,8 @@ export function IssuesPanel({ teamId }: { teamId: string }) {
           >
             ✕
           </button>
+          </div>
+          {expanded === i.id && <Comments issueId={i.id} />}
         </div>
       ))}
     </div>

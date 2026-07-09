@@ -2,6 +2,7 @@ import { useEffect, useState, type CSSProperties } from "react";
 import { apiGet, apiPost, loginUrl } from "./lib/api";
 import { useSession } from "./lib/session";
 import { useSync } from "./lib/sync";
+import { usePresence } from "./lib/usePresence";
 import { IssuesPanel } from "./Issues";
 import { Board } from "./Board";
 import { CommandPalette, type Command } from "./CommandPalette";
@@ -177,6 +178,7 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
               Board
             </button>
             <span style={{ color: "var(--muted)", fontSize: 12 }}>⌘K for commands</span>
+            <TeamPresence teamId={selected.id} />
           </div>
           {view === "list" ? <IssuesPanel teamId={selected.id} /> : <Board teamId={selected.id} />}
           <CommandPalette
@@ -190,6 +192,16 @@ function Teams({ workspace }: { workspace: WorkspaceRow }) {
         </>
       )}
     </div>
+  );
+}
+
+function TeamPresence({ teamId }: { teamId: string }) {
+  const viewers = usePresence(teamId);
+  if (viewers.length === 0) return null;
+  return (
+    <span style={{ color: "var(--ok)", fontSize: 12 }} title="Also viewing (live presence)">
+      👁 {viewers.join(", ")}
+    </span>
   );
 }
 

@@ -12,28 +12,39 @@ import { ServerMessageSchema, type MutationDelta } from "@tracer/shared";
 const WS_URL = import.meta.env.VITE_WS_URL ?? "ws://localhost:3001/ws";
 
 type DeltaHandler = (delta: MutationDelta) => void;
+export interface PresenceEvent {
+  userId: string;
+  name: string | null;
+  teamId: string;
+}
+type PresenceHandler = (p: PresenceEvent) => void;
 
 interface SyncCtx {
   status: "connecting" | "open" | "closed";
   subscribeWorkspace: (workspaceId: string) => void;
   onDelta: (handler: DeltaHandler) => () => void;
+  sendPresence: (teamId: string) => void;
+  onPresence: (handler: PresenceHandler) => () => void;
 }
 
 const Ctx = createContext<SyncCtx>({
   status: "closed",
   subscribeWorkspace: () => {},
   onDelta: () => () => {},
+  sendPresence: () => {},
+  onPresence: () => () => {},
 });
 
 /**
- * The sync client (S06). One WebSocket for the whole app; views register delta handlers. On
- * (re)connect we re-subscribe from `lastSeq`, so a dropped connection self-heals by replaying the
- * mutations it missed — the client half of "the log is truth, the socket is a hint".
+ * The sync client. One WebSocket for the app. Durable deltas and ephemeral presence share the
+ * socket but live on separate logical paths (deltas patch state and persist; presence is fire-and-
+ * forget). On (re)connect we re-subscribe from lastSeq — a dropped connection self-heals.
  */
 export function SyncProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<"connecting" | "open" | "closed">("connecting");
   const wsRef = useRef<WebSocket | null>(null);
-  const handlers = useRef<Set<DeltaHandler>>(new Set());
+  const deltaHandlers = useRef<Set<DeltaHandler>>(new Set());
+  const presenceHandlers = useRef<Set<PresenceHandler>>(new Set());
   const workspaceRef = useRef<string | null>(null);
   const lastSeqRef = useRef(0);
   const attemptsRef = useRef(0);
@@ -47,11 +58,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       setStatus("open");
       if (workspaceRef.current) {
         ws.send(
-          JSON.stringify({
-            type: "subscribe",
-            workspaceId: workspaceRef.current,
-            lastSeq: lastSeqRef.current,
-          }),
+          JSON.stringify({ type: "subscribe", workspaceId: workspaceRef.current, lastSeq: lastSeqRef.current }),
         );
       }
     };
@@ -63,7 +70,9 @@ export function SyncProvider({ children }: { children: ReactNode }) {
       const msg = parsed.data;
       if (msg.type === "delta") {
         lastSeqRef.current = Math.max(lastSeqRef.current, msg.delta.seq);
-        for (const h of handlers.current) h(msg.delta);
+        for (const h of deltaHandlers.current) h(msg.delta);
+      } else if (msg.type === "presence") {
+        for (const h of presenceHandlers.current) h(msg);
       }
     };
     ws.onclose = () => {
@@ -83,7 +92,7 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   const subscribeWorkspace = useCallback((workspaceId: string) => {
     if (workspaceRef.current === workspaceId) return;
     workspaceRef.current = workspaceId;
-    lastSeqRef.current = 0; // new workspace: bootstrap from scratch (deltas apply idempotently)
+    lastSeqRef.current = 0;
     const ws = wsRef.current;
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({ type: "subscribe", workspaceId, lastSeq: 0 }));
@@ -91,13 +100,31 @@ export function SyncProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const onDelta = useCallback((handler: DeltaHandler) => {
-    handlers.current.add(handler);
+    deltaHandlers.current.add(handler);
     return () => {
-      handlers.current.delete(handler);
+      deltaHandlers.current.delete(handler);
     };
   }, []);
 
-  return <Ctx.Provider value={{ status, subscribeWorkspace, onDelta }}>{children}</Ctx.Provider>;
+  const sendPresence = useCallback((teamId: string) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "presence", teamId }));
+    }
+  }, []);
+
+  const onPresence = useCallback((handler: PresenceHandler) => {
+    presenceHandlers.current.add(handler);
+    return () => {
+      presenceHandlers.current.delete(handler);
+    };
+  }, []);
+
+  return (
+    <Ctx.Provider value={{ status, subscribeWorkspace, onDelta, sendPresence, onPresence }}>
+      {children}
+    </Ctx.Provider>
+  );
 }
 
 export const useSync = () => useContext(Ctx);
