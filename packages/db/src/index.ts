@@ -12,4 +12,12 @@ if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
 }
 
-export type { Workspace } from "@prisma/client";
+export type {
+  Workspace,
+  User,
+  Team,
+  Membership,
+  Session,
+  Invite,
+  Role,
+} from "@prisma/client";

@@ -1,6 +1,7 @@
 // Prisma schema for Tracer.
-// Sprint 01 introduces a single reference entity — Workspace — to prove the DB → API → UI slice.
-// The rich domain (teams, issues, the mutation log) arrives in later sprints.
+// Sprint 01: Workspace (the walking-skeleton reference entity).
+// Sprint 02: identity + membership — User, Team, Membership (roles + guest team scoping),
+//            Session, Invite. The issue domain (issues, the mutation log) arrives in S03+.
 
 generator client {
   provider = "prisma-client-js"
@@ -11,9 +12,82 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum Role {
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+model User {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  name           String?
+  avatarUrl      String?
+  // OAuth identity — a user is (provider, providerUserId), never a password.
+  provider       String
+  providerUserId String
+  createdAt      DateTime @default(now())
+
+  memberships Membership[]
+  sessions    Session[]
+
+  @@unique([provider, providerUserId])
+}
+
 model Workspace {
   id        String   @id @default(cuid())
   name      String
   slug      String   @unique
   createdAt DateTime @default(now())
+
+  teams       Team[]
+  memberships Membership[]
+  invites     Invite[]
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  name        String
+  key         String // short prefix, e.g. "ENG" (used for issue identifiers in S03)
+  createdAt   DateTime @default(now())
+
+  @@unique([workspaceId, key])
+}
+
+model Membership {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspaceId  String
+  workspace    Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  role         Role     @default(MEMBER)
+  // For GUEST: the team ids they may access. Empty for ADMIN/MEMBER (they see all teams).
+  guestTeamIds String[]
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, workspaceId])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  // The cookie carries a random token; we store only its hash (never the raw token).
+  tokenHash String   @unique
+  userId    String
+  user      User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+}
+
+model Invite {
+  id          String   @id @default(cuid())
+  workspaceId String
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  email       String
+  role        Role     @default(MEMBER)
+  tokenHash   String   @unique
+  expiresAt   DateTime
+  acceptedAt  DateTime?
+  createdAt   DateTime @default(now())
 }
