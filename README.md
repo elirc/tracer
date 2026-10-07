@@ -26,7 +26,7 @@ a per-workspace log. Clients bootstrap from their `lastSeq`, apply live deltas, 
 drops, duplicates, or reorders. Presence is ephemeral and routed separately. See ADR-0006 and -0007.
 
 ## Stack
-- **Monorepo:** pnpm workspaces + Turborepo · TypeScript strict · Node 22
+- **Monorepo:** pnpm workspaces + Turborepo · TypeScript strict · Node 22 (root `engines` allows ≥ 20)
 - **Web:** Vite + React SPA (`apps/web`)
 - **API:** Fastify + `ws` (`apps/api`)
 - **Data:** Prisma + PostgreSQL (`packages/db`)
@@ -47,10 +47,15 @@ docs/           The course: ADRs, curriculum notes, runbooks, postmortems, retro
 ## Quick start
 ```bash
 pnpm install
-docker compose up -d            # Postgres (see packages/db/docker-compose.yml)
-pnpm db:generate && pnpm db:push && pnpm db:seed
+pnpm db:up                      # Postgres via packages/db/docker-compose.yml
+pnpm db:generate
+pnpm --filter @tracer/db exec prisma db push   # no migrations are committed; push the schema
+pnpm db:seed
 pnpm dev                        # web + api (+ ws) together
 ```
+(There is no root `docker-compose.yml` and no root `db:push` script; the root scripts are
+`db:up`, `db:down`, `db:generate` and `db:seed`. `pnpm --filter @tracer/db migrate` runs
+`prisma migrate dev` instead, which would create a first migration locally.)
 Then open the web app, sign in with the dev provider, and try two browser windows to see live sync.
 
 ## Course docs

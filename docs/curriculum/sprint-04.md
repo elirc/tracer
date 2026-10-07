@@ -15,10 +15,10 @@
   `{ stateId, afterId? }` and the *server* computes the between-key. Two calls (change state, then
   reorder) could tear under failure; one call can't. The server owning the key also means two clients
   can't invent colliding orders — yet (S07 moves this to the client for offline reorders).
-- **Keyboard registry (`web/lib/keyboard.tsx`).** Shortcuts register/unregister with component
+- **Keyboard registry (`apps/web/src/lib/keyboard.tsx`).** Shortcuts register/unregister with component
   lifetime, so the active set mirrors the screen. The one rule already enforced: plain keys don't
   fire while typing in an input, but `mod`-combos (Cmd+K) do. Scoped stacks come later.
-- **Command palette v1 (`web/CommandPalette.tsx`).** Cmd+K, substring filter. Every action should be
+- **Command palette v1 (`apps/web/src/CommandPalette.tsx`).** Cmd+K, substring filter. Every action should be
   reachable here — it's the keyboard-first spine. Real frecency ranking is Sprint 11.
 
 ## Exercise questions

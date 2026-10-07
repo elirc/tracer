@@ -4,6 +4,8 @@ Execution scripts for the 15-sprint build of **Tracer** (Linear-class issue trac
 
 **Start here:** [00-workflow.md](00-workflow.md) — the ritual, plus Tracer-specific rules (fast-forward, latency budget, convergence invariant, labs).
 
+> **Plans vs. what shipped.** These playbooks were written *before* each sprint, so a few names differ from the merged code. The one you will trip over most: the `teamScope()` guard named in sprints 02, 03, 11 and 13 shipped as `requireMembership` / `requireTeamAccess` in `apps/api/src/auth/guards.ts` (`:18`, `:35`) plus the pure helpers `canAccessTeam`, `visibleTeamIds` and `canSeeDelta` in `packages/shared/src/authz.ts`. The sprint-13 findings doc shipped as `docs/audits/sprint-13-security.md`. When a playbook and the code disagree, the code and `docs/curriculum/` are authoritative.
+
 | Sprint | Playbook | Headline |
 |--------|----------|----------|
 | 01 | [sprint-01.md](sprint-01.md) | Fast-forward foundation: SPA + API + WS echo |

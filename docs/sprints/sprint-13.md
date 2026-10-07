@@ -5,7 +5,7 @@
 **Goal:** Audit-first security + resilience sweep with the sync engine as the attack surface: transport chaos against the convergence invariant, per-team channel authz (the big planted leak), mutation-level rate limiting, and a 5k-connection load test. **The learner runs the audit tooling and drafts the findings doc; the AI verifies, extends, and fixes.**
 
 ## A — Setup (audit before code)
-Learner runs: the S7 convergence simulator under a new chaos harness, a WS authz probe script (guest credentials subscribing everywhere), k6 WS load scenario, `pnpm audit` + gitleaks, and a review of `teamScope()` call-site coverage. Findings doc `docs/audits/sprint-13-audit.md` is commit 1 — learner-drafted, AI-annotated (both voices visible).
+Learner runs: the S7 convergence simulator under a new chaos harness, a WS authz probe script (guest credentials subscribing everywhere), k6 WS load scenario, `pnpm audit` + gitleaks, and a review of `teamScope()` call-site coverage. Findings doc `docs/audits/sprint-13-audit.md` is commit 1 (shipped as `docs/audits/sprint-13-security.md`) — learner-drafted, AI-annotated (both voices visible).
 
 ## B — Commits (one finding per commit)
 | # | Commit | Notes |
